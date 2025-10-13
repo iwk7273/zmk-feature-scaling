@@ -9,7 +9,6 @@ if SCALER
 config ZMK_INPUT_PROCESSOR_SCALER
 	bool "Enable Scaling Input Processor"
 	default y
-	depends on ZMK_INPUT_PROCESSORS
 	help
 	  Enable an input processor that scales relative mouse deltas by
 	  (scale_coeff_milli/1000) * delta when scaling_mode is 1.
