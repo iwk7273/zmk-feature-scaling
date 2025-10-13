@@ -11,7 +11,7 @@ include: base.yaml
 properties:
   scaling-mode:
     type: int
-    required: true
+    required: false
     enum: [0, 1]
     description: 0 disables scaling, 1 enables scaling (0.1 * delta)
   scale-coeff-milli:
