@@ -12,7 +12,7 @@ ZMK input_processor module that scales relative mouse input. When `scaling_mode`
 - `ZMK_INPUT_PROCESSOR_SCALER_DEFAULT_COEFF_MILLI`: Default coefficient in milli (e.g., 100 => 0.1)
 
 ### DTS Binding
-compatible: `"zmk,input-processor-scaler"`
+compatible: `"zmk,input-processor-motion-scaler"`
 
 Properties:
 - `scaling-mode` (int, required): 0 disables, 1 enables
@@ -21,7 +21,7 @@ Properties:
 Example:
 ```dts
 scaler0: scaler@0 {
-    compatible = "zmk,input-processor-scaler";
+    compatible = "zmk,input-processor-motion-scaler";
     scaling-mode = <1>;            // enable
     scale-coeff-milli = <100>;     // 0.1
 };

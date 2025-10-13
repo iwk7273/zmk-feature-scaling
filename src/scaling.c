@@ -1,4 +1,4 @@
-#define DT_DRV_COMPAT zmk_input_processor_scaler
+#define DT_DRV_COMPAT zmk_input_processor_motion_scaler
 
 #include "drivers/input_processor.h"
 #include <zephyr/device.h>
