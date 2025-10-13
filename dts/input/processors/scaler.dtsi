@@ -2,6 +2,7 @@
 	input_processors  {
 		scaler: scaler {
 			compatible = "zmk,input-processor-motion-scaler";
+            scaling-mode = <1>;
 			#input-processor-cells = <0>;
 		};
 	};
