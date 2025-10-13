@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: MIT
 
-title: ZMK Input Processor Scaler
-
 description: |
+  ZMK Input Processor Scaler.
   Scales relative mouse movements when scaling_mode is 1.
 
 compatible: "zmk,input-processor-scaler"
