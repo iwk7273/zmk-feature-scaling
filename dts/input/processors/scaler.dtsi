@@ -2,8 +2,8 @@
 	input_processors  {
 		scaler: scaler {
 			compatible = "zmk,input-processor-motion-scaler";
+            #input-processor-cells = <0>;
             scaling-mode = <1>;
-			#input-processor-cells = <0>;
 		};
 	};
 };
