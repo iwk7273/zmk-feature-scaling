@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+
+title: ZMK Input Processor Scaler
+
+description: |
+  Scales relative mouse movements when scaling_mode is 1.
+
+compatible: "zmk,input-processor-scaler"
+
+include: base.yaml
+
+properties:
+  scaling-mode:
+    type: int
+    required: true
+    enum: [0, 1]
+    description: 0 disables scaling, 1 enables scaling (0.1 * delta)
+  scale-coeff-milli:
+    type: int
+    required: false
+    default: 100
+    description: Coefficient in milli (e.g. 100 => 0.1). factor = coeff * delta
+
+
