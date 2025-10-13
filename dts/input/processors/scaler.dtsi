@@ -1,10 +1,8 @@
 / {
 	input_processors  {
-		motion_scaler: scaler {
+		motion_scaler: motion_scaler {
 			compatible = "zmk,input-processor-motion-scaler";
             #input-processor-cells = <0>;
-			scaling-mode = <1>;
-			scale-coeff-milli = <100>;
 		};
 	};
 };
