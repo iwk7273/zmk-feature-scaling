@@ -6,7 +6,7 @@ description: |
 
 compatible: "zmk,input-processor-motion-scaler"
 
-include: base.yaml
+include: ip_zero_param.yaml
 
 properties:
   scaling-mode:
