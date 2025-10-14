@@ -1,4 +1,4 @@
 zephyr_library()
-zephyr_library_sources_ifdef(CONFIG_SCALER src/scaling.c)
+zephyr_library_sources_ifdef(CONFIG_SCALER src/motion_scaling.c)
 
 
