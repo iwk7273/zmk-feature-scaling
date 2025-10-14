@@ -21,7 +21,7 @@ Properties:
 Example:
 ```dts
 scaler0: scaler@0 {
-    compatible = "zmk,input-processor-motion-scaler";
+    compatible = "zmk,input-processFor-motion-scaler";
     scaling-mode = <1>;            // enable
     scale-coeff-milli = <100>;     // 0.1
 };

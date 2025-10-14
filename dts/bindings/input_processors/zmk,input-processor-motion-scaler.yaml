@@ -17,5 +17,9 @@ properties:
     type: int
     required: false
     description: Coefficient in milli (e.g. 100 => 0.1). factor = coeff * delta
+  track-remainders:
+    type: boolean
+    required: false
+    description: If present, track remainders from scaling and carry them over.
 
 
