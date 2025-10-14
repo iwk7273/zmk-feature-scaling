@@ -12,12 +12,10 @@ properties:
   scaling-mode:
     type: int
     required: false
-    enum: [0, 1]
     description: 0 disables scaling, 1 enables scaling (0.1 * delta)
   scale-coeff-milli:
     type: int
     required: false
-    default: 100
     description: Coefficient in milli (e.g. 100 => 0.1). factor = coeff * delta
 
 
