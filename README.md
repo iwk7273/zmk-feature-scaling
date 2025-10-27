@@ -73,3 +73,11 @@ manifest:
 
 ### License
 MIT License
+
+### Curve Tuning Tool
+- Pointer Acceleration Curve Studio: https://pointer-acceleration-curve-studio.pages.dev/
+- Use it to preview and tune this module’s parameters on a graph.
+  - max-output → U
+  - half-input → xs
+  - exponent-tenths/10 → p
+- Select y(x) in the tool to match the module’s formula. This helps find smooth, comfortable curves before applying settings in your DTS overlay.
