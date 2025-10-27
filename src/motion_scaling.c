@@ -10,7 +10,7 @@
 #include <limits.h>
 #include <math.h>
 
-LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+LOG_MODULE_REGISTER(motion_scaler, CONFIG_ZMK_LOG_LEVEL);
 
 // Q16 fixed-point helpers
 #define Q16_ONE        (1 << 16)
@@ -48,8 +48,6 @@ static inline int32_t q16_pow_i_sat(int32_t base_q16, unsigned int exp) {
 }
 
 struct scaler_data {
-    int32_t x_accum;
-    int32_t y_accum;
     int32_t remainder_x_q16;
     int32_t remainder_y_q16;
 };
@@ -59,6 +57,7 @@ struct scaler_config {
     int u;  /* 最大出力 U (counts) */
     int xs; /* 半入力 xs (counts) */
     int p_tenths;  /* 指数 p (小数1桁, 10倍で保持) */
+    int32_t inv_xs_q16; /* 1/xs in Q16 to avoid per-event divide */
     bool track_remainders;
 };
 
@@ -70,10 +69,9 @@ static inline int32_t scale_axis_apply(int32_t accum, const struct scaler_config
 
     const int32_t sign = (accum >= 0) ? 1 : -1;
     const int32_t aabs = (accum >= 0) ? accum : -accum;
-    const int32_t xs = (config->xs > 0) ? config->xs : 1;
-
-    // r = |x|/xs
-    const int32_t r_q16 = (int32_t)(((int64_t)aabs << 16) / (int64_t)xs);
+    // r = |x|/xs (use precomputed reciprocal in Q16)
+    int64_t r_tmp = (int64_t)aabs * (int64_t)config->inv_xs_q16; // Q16
+    int32_t r_q16 = (r_tmp > INT32_MAX) ? INT32_MAX : (int32_t)r_tmp;
 
     // rp1 = r^(p+1) where p is in tenths
     int p10 = config->p_tenths;
@@ -82,6 +80,10 @@ static inline int32_t scale_axis_apply(int32_t accum, const struct scaler_config
     int e_frac_tenths = p10 % 10;         // fractional part (0..9)
     int32_t rp1_q16 = q16_pow_i_sat(r_q16, (unsigned int)e_int);
     if (e_frac_tenths != 0 && r_q16 > 0) {
+        if (r_q16 == Q16_ONE) {
+            // r == 1 -> r^e_frac == 1, skip powf
+            // rp1_q16 unchanged
+        } else {
         float r_f = (float)r_q16 / (float)Q16_ONE;
         float e_frac = (float)e_frac_tenths / 10.0f;
         float rp1_frac_f = powf(r_f, e_frac);
@@ -93,6 +95,7 @@ static inline int32_t scale_axis_apply(int32_t accum, const struct scaler_config
         if (rp1_frac_q16 < 0) rp1_frac_q16 = 0;
         if (rp1_frac_q16 > Q16_SAT_MAX) rp1_frac_q16 = Q16_SAT_MAX;
         rp1_q16 = q16_mul_sat(rp1_q16, rp1_frac_q16);
+        }
     }
 
     // frac = rp1/(1+rp1) with overflow-safe handling
@@ -136,10 +139,14 @@ static int scaler_handle_event(
     switch (event->type) {
     case INPUT_EV_REL: {
         if (event->code == INPUT_REL_X) {
-            int32_t out_x = scale_axis_apply(event->value, config, &data->remainder_x_q16);
+            int32_t in_x = event->value;
+            int32_t out_x = scale_axis_apply(in_x, config, &data->remainder_x_q16);
+            LOG_DBG("motion_scaler REL_X in=%d out=%d rem_q16=%d", in_x, out_x, data->remainder_x_q16);
             event->value = out_x;
         } else if (event->code == INPUT_REL_Y) {
-            int32_t out_y = scale_axis_apply(event->value, config, &data->remainder_y_q16);
+            int32_t in_y = event->value;
+            int32_t out_y = scale_axis_apply(in_y, config, &data->remainder_y_q16);
+            LOG_DBG("motion_scaler REL_Y in=%d out=%d rem_q16=%d", in_y, out_y, data->remainder_y_q16);
             event->value = out_y;
         }
         return ZMK_INPUT_PROC_CONTINUE;
@@ -155,8 +162,6 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
 
 #define SCALER_INST(n) \
     static struct scaler_data scaler_data_##n = { \
-        .x_accum = 0, \
-        .y_accum = 0, \
         .remainder_x_q16 = 0, \
         .remainder_y_q16 = 0, \
     }; \
@@ -165,6 +170,7 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
         .u = DT_INST_PROP_OR(n, u, 127), \
         .xs = DT_INST_PROP_OR(n, xs, 50), \
         .p_tenths = DT_INST_PROP_OR(n, p_tenths, 10), \
+        .inv_xs_q16 = (int32_t)((((int64_t)(1 << 16)) + (DT_INST_PROP_OR(n, xs, 50) / 2)) / DT_INST_PROP_OR(n, xs, 50)), \
         .track_remainders = DT_INST_PROP(n, track_remainders), \
     }; \
     DEVICE_DT_INST_DEFINE(n, NULL, NULL, \
