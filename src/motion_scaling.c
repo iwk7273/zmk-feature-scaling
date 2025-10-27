@@ -1,4 +1,4 @@
-#define DT_DRV_COMPAT zmk_input_processor_motion_scaler
+﻿#define DT_DRV_COMPAT zmk_input_processor_motion_scaler
 
 #include "drivers/input_processor.h"
 #include <zephyr/device.h>
@@ -7,8 +7,45 @@
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <limits.h>
+#include <math.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+
+// Q16 fixed-point helpers
+#define Q16_ONE        (1 << 16)
+#define Q16_SAT_MAX    0x3FFFFFFF /* leave headroom to avoid overflow on addition */
+
+static inline int32_t q16_mul_sat(int32_t a, int32_t b) {
+    int64_t t = ((int64_t)a * (int64_t)b) >> 16;
+    if (t > Q16_SAT_MAX) return Q16_SAT_MAX;
+    if (t < -Q16_SAT_MAX) return -Q16_SAT_MAX;
+    return (int32_t)t;
+}
+
+static inline int32_t q16_div(int32_t a, int32_t b) {
+    if (b == 0) {
+        // Division by zero not expected; return 0 (safe fallback for our usage)
+        return 0;
+    }
+    return (int32_t)(((int64_t)a << 16) / (int64_t)b);
+}
+
+static inline int32_t q16_pow_i_sat(int32_t base_q16, unsigned int exp) {
+    // Exponentiation by squaring with saturation
+    int32_t result = Q16_ONE;
+    int32_t base = base_q16;
+    while (exp > 0) {
+        if (exp & 1u) {
+            result = q16_mul_sat(result, base);
+        }
+        exp >>= 1;
+        if (exp) {
+            base = q16_mul_sat(base, base);
+        }
+    }
+    return result;
+}
 
 struct scaler_data {
     int32_t x_accum;
@@ -18,10 +55,73 @@ struct scaler_data {
 };
 
 struct scaler_config {
-    int scaling_mode; /* 0 or 1 */
-    int scale_coeff_milli; /* e.g. 100 => 0.1 */
+    int32_t scaling_mode; /* 0 or 1 */
+    int u;  /* 最大出力 U (counts) */
+    int xs; /* 半入力 xs (counts) */
+    int p_tenths;  /* 指数 p (小数1桁, 10倍で保持) */
     bool track_remainders;
 };
+
+static inline int32_t scale_axis_apply(int32_t accum, const struct scaler_config *config,
+                                       int32_t *remainder_q16) {
+    if (accum == 0) {
+        return 0;
+    }
+
+    const int32_t sign = (accum >= 0) ? 1 : -1;
+    const int32_t aabs = (accum >= 0) ? accum : -accum;
+    const int32_t xs = (config->xs > 0) ? config->xs : 1;
+
+    // r = |x|/xs
+    const int32_t r_q16 = (int32_t)(((int64_t)aabs << 16) / (int64_t)xs);
+
+    // rp1 = r^(p+1) where p is in tenths
+    int p10 = config->p_tenths;
+    if (p10 < 0) p10 = 0; // non-negative
+    int e_int = 1 + (p10 / 10);           // integer part of exponent
+    int e_frac_tenths = p10 % 10;         // fractional part (0..9)
+    int32_t rp1_q16 = q16_pow_i_sat(r_q16, (unsigned int)e_int);
+    if (e_frac_tenths != 0 && r_q16 > 0) {
+        float r_f = (float)r_q16 / (float)Q16_ONE;
+        float e_frac = (float)e_frac_tenths / 10.0f;
+        float rp1_frac_f = powf(r_f, e_frac);
+        if (!isfinite(rp1_frac_f)) {
+            rp1_frac_f = 1.0f;
+        }
+        int32_t rp1_frac_q16 = (int32_t)lrintf(rp1_frac_f * (float)Q16_ONE);
+        // clamp
+        if (rp1_frac_q16 < 0) rp1_frac_q16 = 0;
+        if (rp1_frac_q16 > Q16_SAT_MAX) rp1_frac_q16 = Q16_SAT_MAX;
+        rp1_q16 = q16_mul_sat(rp1_q16, rp1_frac_q16);
+    }
+
+    // frac = rp1/(1+rp1) with overflow-safe handling
+    if (rp1_q16 >= Q16_SAT_MAX - Q16_ONE) {
+        rp1_q16 = Q16_SAT_MAX - Q16_ONE;
+    }
+    int32_t denom_q16 = rp1_q16 + Q16_ONE; // safe due to headroom
+    int32_t frac_q16 = q16_div(rp1_q16, denom_q16);
+
+    // scaled = U * frac * sign
+    const int32_t u_q16 = (int32_t)((int64_t)config->u << 16);
+    int32_t scaled_q16 = q16_mul_sat(u_q16, frac_q16);
+    if (sign < 0) scaled_q16 = -scaled_q16;
+
+    int32_t out;
+    if (config->track_remainders) {
+        scaled_q16 += *remainder_q16;
+        out = scaled_q16 >> 16;
+        *remainder_q16 = scaled_q16 - (out << 16);
+    } else {
+        out = (scaled_q16 + (1 << 15)) >> 16; // round to nearest
+    }
+
+    // Clamp to [-U, U]
+    if (out > config->u) out = config->u;
+    if (out < -config->u) out = -config->u;
+
+    return out;
+}
 
 static int scaler_handle_event(
     const struct device *dev, struct input_event *event, uint32_t param1,
@@ -38,63 +138,26 @@ static int scaler_handle_event(
         if (event->code == INPUT_REL_X) {
             data->x_accum += event->value;
             event->value = 0;
+            int32_t out_x = scale_axis_apply(data->x_accum, config, &data->remainder_x_q16);
+            if (out_x != 0) {
+                event->value = out_x;
+                data->x_accum = 0;
+            } else {
+                return ZMK_INPUT_PROC_CONTINUE;
+            }
         } else if (event->code == INPUT_REL_Y) {
             data->y_accum += event->value;
             event->value = 0;
+            int32_t out_y = scale_axis_apply(data->y_accum, config, &data->remainder_y_q16);
+            if (out_y != 0) {
+                event->value = out_y;
+                data->y_accum = 0;
+            } else {
+                return ZMK_INPUT_PROC_CONTINUE;
+            }
         } else {
             return ZMK_INPUT_PROC_CONTINUE;
         }
-
-        // coeff をQ16形式で計算: (scale_coeff_milli / 1000.0) * 65536
-        const int32_t coeff_q16 = ((int64_t)config->scale_coeff_milli << 16) / 1000;
-
-        if (event->code == INPUT_REL_X) {
-            if (data->x_accum == 0) {
-                return ZMK_INPUT_PROC_CONTINUE; // 提案1を適用
-            }
-            // x_accum をQ16形式に変換
-            const int32_t fx_q16 = data->x_accum << 16;
-            // delta_x をQ16形式で計算 (fabsfの代替)
-            const int32_t delta_x_q16 = (fx_q16 > 0) ? fx_q16 : -fx_q16;
-            
-            // factorとscaled_xをQ16形式で計算
-            const int32_t factor_q16 = (int32_t)(((int64_t)coeff_q16 * delta_x_q16) >> 16);
-            int32_t scaled_x_q16 = (int32_t)(((int64_t)fx_q16 * factor_q16) >> 16);
-
-            int32_t out_x;
-            if (config->track_remainders) {
-                scaled_x_q16 += data->remainder_x_q16;
-                out_x = scaled_x_q16 >> 16; // 切り捨て
-                data->remainder_x_q16 = scaled_x_q16 - (out_x << 16);
-            } else {
-                // 四捨五入 (lrintfの代替): (val + 0.5) >> 16
-                out_x = (scaled_x_q16 + (1 << 15)) >> 16;
-            }
-            event->value = out_x;
-            data->x_accum = 0;
-        } else if (event->code == INPUT_REL_Y) {
-            // Y軸も同様に処理
-            if (data->y_accum == 0) {
-                return ZMK_INPUT_PROC_CONTINUE; // 提案1を適用
-            }
-            const int32_t fy_q16 = data->y_accum << 16;
-            const int32_t delta_y_q16 = (fy_q16 > 0) ? fy_q16 : -fy_q16;
-
-            const int32_t factor_q16 = (int32_t)(((int64_t)coeff_q16 * delta_y_q16) >> 16);
-            int32_t scaled_y_q16 = (int32_t)(((int64_t)fy_q16 * factor_q16) >> 16);
-
-            int32_t out_y;
-            if (config->track_remainders) {
-                scaled_y_q16 += data->remainder_y_q16;
-                out_y = scaled_y_q16 >> 16;
-                data->remainder_y_q16 = scaled_y_q16 - (out_y << 16);
-            } else {
-                out_y = (scaled_y_q16 + (1 << 15)) >> 16;
-            }
-            event->value = out_y;
-            data->y_accum = 0;
-        }
-
         return ZMK_INPUT_PROC_CONTINUE;
     }
     default:
@@ -115,7 +178,9 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
     }; \
     static const struct scaler_config scaler_config_##n = { \
         .scaling_mode = DT_INST_PROP(n, scaling_mode), \
-        .scale_coeff_milli = DT_INST_PROP_OR(n, scale_coeff_milli, CONFIG_ZMK_INPUT_PROCESSOR_SCALER_DEFAULT_COEFF_MILLI), \
+        .u = DT_INST_PROP_OR(n, u, 127), \
+        .xs = DT_INST_PROP_OR(n, xs, 50), \
+        .p_tenths = DT_INST_PROP_OR(n, p_tenths, 10), \
         .track_remainders = DT_INST_PROP(n, track_remainders), \
     }; \
     DEVICE_DT_INST_DEFINE(n, NULL, NULL, \
@@ -124,5 +189,7 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
                           &scaler_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(SCALER_INST)
+
+
 
 

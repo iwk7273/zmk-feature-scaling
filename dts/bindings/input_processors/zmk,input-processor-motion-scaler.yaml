@@ -2,7 +2,8 @@
 
 description: |
   ZMK Input Processor Motion Scaler.
-  Scales relative mouse movements when scaling_mode is 1.
+  Scales relative mouse movements when scaling_mode is 1 using
+  y(x) = U * r^(p+1) / (1 + r^(p+1)) * sign(x), r = |x|/xs.
 
 compatible: "zmk,input-processor-motion-scaler"
 
@@ -12,11 +13,24 @@ properties:
   scaling-mode:
     type: int
     required: false
-    description: 0 disables scaling, 1 enables scaling (0.1 * delta)
+    description: 0 disables scaling, 1 enables scaling.
+  u:
+    type: int
+    required: false
+    description: Maximum output U (counts). Clamps |y| <= U. Default 127.
+  xs:
+    type: int
+    required: false
+    description: Half-input xs (counts) defining r = |x|/xs. Default 50.
+  p-tenths:
+    type: int
+    required: false
+    description: Exponent p with 0.1 resolution. Provide p*10 as an integer (e.g. 15 for 1.5). Default 10.
   scale-coeff-milli:
     type: int
     required: false
-    description: Coefficient in milli (e.g. 100 => 0.1). factor = coeff * delta
+    deprecated: true
+    description: Deprecated. Old linear coefficient; ignored by current driver.
   track-remainders:
     type: boolean
     required: false
