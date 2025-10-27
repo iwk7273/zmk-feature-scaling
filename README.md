@@ -1,39 +1,50 @@
 ## zmk-feature-scaling
 
-A ZMK input_processor module that provides dynamic scaling for relative mouse inputs, often used for pointer acceleration.
+A ZMK input_processor module that provides dynamic, per-axis scaling for relative mouse inputs (pointer acceleration).
 
-The scaling factor is determined independently for each axis based on the magnitude of movement on that axis. This allows for stable and predictable acceleration without suffering from event synchronization issues.
+The output is computed strictly from the following formula on every event (for each axis independently):
 
-- **Behavior**: `x_out = x_in * (coeff * |x_in|)`, `y_out = y_in * (coeff * |y_in|)`
-- **Enable/Disable**: Active when `scaling_mode = 1`, pass-through when `scaling_mode = 0`.
-- **Coefficient**: Set via the Device Tree property `scale-coeff-milli`.
-- **Remainder Tracking**: Optionally, fractional parts from scaling can be carried over to subsequent movements for smoother low-speed control.
+- y(x) = U · r^(p+1) / (1 + r^(p+1)) · sign(x)
+- r = |x| / xs
+
+Where:
+- U is the maximum absolute output (counts)
+- xs is the half-input that defines the scale for r
+- p is the exponent controlling the curve shape (with 0.1 resolution)
+
+- Enable/Disable: Active when `scaling-mode = 1`, pass-through when `scaling-mode = 0`.
+- Remainder Tracking: Optionally track fractional parts in Q16 and carry over to subsequent events for smoother low-speed control.
 
 ### Performance
-All calculations are performed using fixed-point arithmetic, avoiding floating-point operations. This ensures high performance even on microcontrollers without a dedicated FPU.
+- The scaling is computed using float with `powf(r, p+1)` per event. This matches the formula closely without fixed-point approximations.
+- Only the final output uses Q16 for remainder accumulation. Outputs are clamped to `[-max-output, max-output]`.
 
 ### Kconfig
-- `CONFIG_SCALER`: Enables the scaling input processor module, which compiles the source code.
-- `CONFIG_ZMK_INPUT_PROCESSOR_SCALER_DEFAULT_COEFF_MILLI`: Default coefficient in milli-units (e.g., 100 => 0.1).
+- `CONFIG_SCALER`: Enables building this input processor module.
 
 ### DTS Binding
 `compatible = "zmk,input-processor-motion-scaler";`
 
-**Properties:**
-- `scaling-mode` (int, required): `0` disables the processor, `1` enables it.
-- `scale-coeff-milli` (int, optional): The acceleration coefficient in milli-units. Defaults to the Kconfig value.
-- `track-remainders` (boolean, optional): If present, enables the carrying-over of fractional remainders from scaling calculations. This improves precision and smoothness, especially for small, slow movements.
+Properties:
+- `scaling-mode` (int): `0` disables, `1` enables.
+- `max-output` (int): Maximum absolute output |y|. Default 127.
+- `half-input` (int): Half-input xs used in r=|x|/xs. Default 50.
+- `exponent-tenths` (int): Exponent p with 0.1 resolution (use p*10, e.g., 15 for p=1.5). Default 10 (p=1.0).
+- `track-remainders` (boolean): If present, enables carrying-over of fractional Q16 remainders.
 
-**Example:**
+Example overlay:
 ```dts
 &pointing_device {
-    processors = <&scaler>;
+    processors = <&motion_scaler>;
 };
 
-scaler: scaler {
+motion_scaler: motion_scaler {
     compatible = "zmk,input-processor-motion-scaler";
+    #input-processor-cells = <0>;
     scaling-mode = <1>;
-    scale-coeff-milli = <100>;
+    max-output = <300>;
+    half-input = <50>;
+    exponent-tenths = <20>; // p = 2.0
     track-remainders;
 };
 ```
