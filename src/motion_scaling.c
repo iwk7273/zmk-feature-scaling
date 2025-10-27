@@ -22,9 +22,9 @@ struct scaler_data {
 
 struct scaler_config {
     int32_t scaling_mode; /* 0 or 1 */
-    int u;  /* 最大出力 U (counts) */
-    int xs; /* 半入力 xs (counts) */
-    int p_tenths;  /* 指数 p (小数1桁, 10倍で保持) */
+    int max_output;    /* 最大出力（|y|の上限） */
+    int half_input;    /* 半入力（r=|x|/half_input の基準） */
+    int exponent_tenths; /* 指数p（小数1桁、p*10で保持） */
     bool track_remainders;
 };
 
@@ -37,16 +37,16 @@ static inline int32_t scale_axis_apply(int32_t dx, const struct scaler_config *c
     // Compute using float strictly per formula
     const int sign = (dx >= 0) ? 1 : -1;
     const int aabs = (dx >= 0) ? dx : -dx;
-    const int xs = (config->xs > 0) ? config->xs : 1;
+    const int xs = (config->half_input > 0) ? config->half_input : 1;
     const float r = (float)aabs / (float)xs;
-    float p = (float)((config->p_tenths < 0) ? 0 : config->p_tenths) / 10.0f;
+    float p = (float)((config->exponent_tenths < 0) ? 0 : config->exponent_tenths) / 10.0f;
     const float e = p + 1.0f;
     float rp1 = powf(r, e);
     if (!isfinite(rp1)) {
         rp1 = INFINITY; // treat as saturating
     }
     const float frac = rp1 / (1.0f + rp1); // in (0,1)
-    float y = (float)config->u * frac * (float)sign;
+    float y = (float)config->max_output * frac * (float)sign;
     // Convert to Q16 for remainder accumulation
     int32_t scaled_q16 = (int32_t)lrintf(y * (float)Q16_ONE);
 
@@ -61,9 +61,9 @@ static inline int32_t scale_axis_apply(int32_t dx, const struct scaler_config *c
         out = (scaled_q16 + (1 << 15)) >> 16; // round to nearest
     }
 
-    // Clamp to [-U, U]
-    if (out > config->u) out = config->u;
-    if (out < -config->u) out = -config->u;
+    // Clamp to [-max_output, max_output]
+    if (out > config->max_output) out = config->max_output;
+    if (out < -config->max_output) out = -config->max_output;
 
     return out;
 }
@@ -109,9 +109,9 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
     }; \
     static const struct scaler_config scaler_config_##n = { \
         .scaling_mode = DT_INST_PROP(n, scaling_mode), \
-        .u = DT_INST_PROP_OR(n, u, 127), \
-        .xs = DT_INST_PROP_OR(n, xs, 50), \
-        .p_tenths = DT_INST_PROP_OR(n, p_tenths, 10), \
+        .max_output = DT_INST_PROP_OR(n, max_output, DT_INST_PROP_OR(n, u, 127)), \
+        .half_input = DT_INST_PROP_OR(n, half_input, DT_INST_PROP_OR(n, xs, 50)), \
+        .exponent_tenths = DT_INST_PROP_OR(n, exponent_tenths, DT_INST_PROP_OR(n, p_tenths, 10)), \
         .track_remainders = DT_INST_PROP(n, track_remainders), \
     }; \
     DEVICE_DT_INST_DEFINE(n, NULL, NULL, \
