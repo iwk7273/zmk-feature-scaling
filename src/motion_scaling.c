@@ -136,27 +136,11 @@ static int scaler_handle_event(
     switch (event->type) {
     case INPUT_EV_REL: {
         if (event->code == INPUT_REL_X) {
-            data->x_accum += event->value;
-            event->value = 0;
-            int32_t out_x = scale_axis_apply(data->x_accum, config, &data->remainder_x_q16);
-            if (out_x != 0) {
-                event->value = out_x;
-                data->x_accum = 0;
-            } else {
-                return ZMK_INPUT_PROC_CONTINUE;
-            }
+            int32_t out_x = scale_axis_apply(event->value, config, &data->remainder_x_q16);
+            event->value = out_x;
         } else if (event->code == INPUT_REL_Y) {
-            data->y_accum += event->value;
-            event->value = 0;
-            int32_t out_y = scale_axis_apply(data->y_accum, config, &data->remainder_y_q16);
-            if (out_y != 0) {
-                event->value = out_y;
-                data->y_accum = 0;
-            } else {
-                return ZMK_INPUT_PROC_CONTINUE;
-            }
-        } else {
-            return ZMK_INPUT_PROC_CONTINUE;
+            int32_t out_y = scale_axis_apply(event->value, config, &data->remainder_y_q16);
+            event->value = out_y;
         }
         return ZMK_INPUT_PROC_CONTINUE;
     }
