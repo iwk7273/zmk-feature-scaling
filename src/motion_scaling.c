@@ -113,8 +113,10 @@ static inline int32_t scale_axis_apply(int32_t accum, const struct scaler_config
     int32_t out;
     if (config->track_remainders) {
         scaled_q16 += *remainder_q16;
-        out = scaled_q16 >> 16;
-        *remainder_q16 = scaled_q16 - (out << 16);
+        // Use truncate-towards-zero division to extract integer part
+        out = scaled_q16 / Q16_ONE;
+        // Keep fractional remainder with the same sign as scaled_q16
+        *remainder_q16 = scaled_q16 - out * Q16_ONE;
     } else {
         out = (scaled_q16 + (1 << 15)) >> 16; // round to nearest
     }
