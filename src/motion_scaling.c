@@ -109,9 +109,9 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
     }; \
     static const struct scaler_config scaler_config_##n = { \
         .scaling_mode = DT_INST_PROP(n, scaling_mode), \
-        .max_output = DT_INST_PROP_OR(n, max_output, DT_INST_PROP_OR(n, u, 127)), \
-        .half_input = DT_INST_PROP_OR(n, half_input, DT_INST_PROP_OR(n, xs, 50)), \
-        .exponent_tenths = DT_INST_PROP_OR(n, exponent_tenths, DT_INST_PROP_OR(n, p_tenths, 10)), \
+        .max_output = DT_INST_PROP_OR(n, max_output, 127), \
+        .half_input = DT_INST_PROP_OR(n, half_input, 50), \
+        .exponent_tenths = DT_INST_PROP_OR(n, exponent_tenths, 10), \
         .track_remainders = DT_INST_PROP(n, track_remainders), \
     }; \
     DEVICE_DT_INST_DEFINE(n, NULL, NULL, \

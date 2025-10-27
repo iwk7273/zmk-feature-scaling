@@ -26,26 +26,6 @@ properties:
     type: int
     required: false
     description: Exponent p with 0.1 resolution (p*10). Replaces 'p-tenths'. Default 10.
-  u:
-    type: int
-    required: false
-    deprecated: true
-    description: Deprecated. Use 'max-output' instead. Maximum output U (counts). Default 127.
-  xs:
-    type: int
-    required: false
-    deprecated: true
-    description: Deprecated. Use 'half-input' instead. Half-input xs (counts). Default 50.
-  p-tenths:
-    type: int
-    required: false
-    deprecated: true
-    description: Deprecated. Use 'exponent-tenths' instead. Provide p*10 as an integer (e.g. 15 for 1.5). Default 10.
-  scale-coeff-milli:
-    type: int
-    required: false
-    deprecated: true
-    description: Deprecated. Old linear coefficient; ignored by current driver.
   track-remainders:
     type: boolean
     required: false
