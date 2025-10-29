@@ -1,4 +1,4 @@
-menuconfig SCALER
+﻿menuconfig SCALER
 	bool "Enable Scaling Module"
 	default n
 	help
@@ -23,5 +23,3 @@ config ZMK_INPUT_PROCESSOR_SCALER_DEFAULT_COEFF_MILLI
 	  scale-coeff-milli is not provided. 100 => 0.1.
 
 endif # SCALER
-
-
