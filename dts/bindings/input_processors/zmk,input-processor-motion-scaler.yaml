@@ -26,9 +26,3 @@ properties:
     type: int
     required: false
     description: Exponent p with 0.1 resolution (p*10). Replaces 'p-tenths'. Default 10.
-  track-remainders:
-    type: boolean
-    required: false
-    description: If present, track remainders from scaling and carry them over.
-
-

@@ -116,14 +116,9 @@ static inline int32_t apply_gain_axis_q16(int32_t in,
         return 0;
     }
     int64_t scaled_q16 = (int64_t)in * (int64_t)gain_q16;
-    int32_t out;
-    if (config->track_remainders) {
-        scaled_q16 += *remainder_q16;
-        out = (int32_t)(scaled_q16 / Q16_ONE);
-        *remainder_q16 = (int32_t)(scaled_q16 - (int64_t)out * Q16_ONE);
-    } else {
-        out = (int32_t)((scaled_q16 + (Q16_ONE >> 1)) / Q16_ONE);
-    }
+    scaled_q16 += *remainder_q16;
+    int32_t out = (int32_t)(scaled_q16 / Q16_ONE);
+    *remainder_q16 = (int32_t)(scaled_q16 - (int64_t)out * Q16_ONE);
     return clamp_axis_output(out, config->max_output);
 }
 
@@ -173,30 +168,36 @@ static int scaler_handle_event(
         if (event->code == INPUT_REL_X) {
             int32_t in_x = event->value;
             accumulate_axis(data, INPUT_REL_X, in_x);
-            int32_t out_x = apply_gain_axis_q16(in_x, data->gain_q16, config, &data->remainder_x_q16);
-            LOG_DBG("motion_scaler REL_X in=%d out=%d rem_q16=%d k_q16=%d", in_x, out_x, data->remainder_x_q16, data->gain_q16);
+            int32_t out_x =
+                apply_gain_axis_q16(in_x, data->gain_q16, config, &data->remainder_x_q16);
+            LOG_DBG("motion_scaler REL_X in=%d out=%d rem_q16=%d k_q16=%d", in_x, out_x,
+                    data->remainder_x_q16, data->gain_q16);
             event->value = out_x;
         } else if (event->code == INPUT_REL_Y) {
             int32_t in_y = event->value;
             accumulate_axis(data, INPUT_REL_Y, in_y);
-            int32_t out_y = apply_gain_axis_q16(in_y, data->gain_q16, config, &data->remainder_y_q16);
-            LOG_DBG("motion_scaler REL_Y in=%d out=%d rem_q16=%d k_q16=%d", in_y, out_y, data->remainder_y_q16, data->gain_q16);
+            int32_t out_y =
+                apply_gain_axis_q16(in_y, data->gain_q16, config, &data->remainder_y_q16);
+            LOG_DBG("motion_scaler REL_Y in=%d out=%d rem_q16=%d k_q16=%d", in_y, out_y,
+                    data->remainder_y_q16, data->gain_q16);
             event->value = out_y;
         }
-
-        /* sync=true でフレーム終端。次フレーム用のkを算出してラッチ。 */
-        if (event->sync) {
-            int32_t next_k_q16 = compute_next_gain_q16_from_acc(data, config);
-            data->gain_q16 = next_k_q16;
-            data->acc_x = 0;
-            data->acc_y = 0;
-            LOG_DBG("motion_scaler frame end: k_q16=%d", data->gain_q16);
-        }
-        return ZMK_INPUT_PROC_CONTINUE;
+        break;
     }
     default:
-        return ZMK_INPUT_PROC_CONTINUE;
+        break;
     }
+
+    /* sync=true でフレーム終端。次フレーム用のkを算出してラッチ。 */
+    if (event->sync) {
+        int32_t next_k_q16 = compute_next_gain_q16_from_acc(data, config);
+        data->gain_q16 = next_k_q16;
+        data->acc_x = 0;
+        data->acc_y = 0;
+        LOG_DBG("motion_scaler frame end: k_q16=%d", data->gain_q16);
+    }
+
+    return ZMK_INPUT_PROC_CONTINUE;
 }
 
 static struct zmk_input_processor_driver_api scaler_driver_api = {
@@ -224,7 +225,5 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
                           &scaler_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(SCALER_INST)
-
-
 
 
