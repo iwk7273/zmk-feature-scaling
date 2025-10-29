@@ -170,14 +170,6 @@ static int scaler_handle_event(
 
     switch (event->type) {
     case INPUT_EV_REL: {
-        /*
-         * 等方（フレーム内同一k）スケーリング:
-         * - フレーム内の生のX/Yを累積（次フレームのk計算用）。
-         * - 同一フレームでは、前フレームのsync時にラッチしたk(Q16)をX/Y両軸へ適用。
-         * - kはベクトル長に既存の y(x) 曲線を当てて算出。
-         * - 軸ごとのQ16残差は従来どおり保持。
-         * - フレーム終端判定は event->sync を使用。
-         */
         if (event->code == INPUT_REL_X) {
             int32_t in_x = event->value;
             accumulate_axis(data, INPUT_REL_X, in_x);
