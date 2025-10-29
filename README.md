@@ -1,23 +1,15 @@
 ## zmk-feature-scaling
 
-A ZMK input_processor module that provides dynamic, per-axis scaling for relative mouse inputs (pointer acceleration).
+`zmk-feature-scaling` is a ZMK input processor that evaluates a configurable acceleration curve on frame-based pointer input while preserving the resulting direction vector.
 
-The output is computed strictly from the following formula on every event (for each axis independently):
+### Key mechanics
+- **Frame-scoped gain** – All relative events carrying the same `sync=true` flag are accumulated into a vector `v`. Its magnitude is fed to the curve
+  `y(|v|) = U · r^(p+1) / (1 + r^(p+1))`, `r = |v| / xs`.
+- **Isotropic application** – The gain `k = y(|v|) / |v|` is latched and applied to both axes during the next frame, so `X:Y` ratios are preserved.
+- **Q16 residual tracking** – Each axis maintains a fixed-point remainder to keep sub-pixel precision and avoid drift at low velocity.
+- **Runtime control** – `scaling-mode = 0` disables the processor at runtime; `1` enables the curve.
 
-- y(x) = U · r^(p+1) / (1 + r^(p+1)) · sign(x)
-- r = |x| / xs
-
-Where:
-- U is the maximum absolute output (counts)
-- xs is the half-input that defines the scale for r
-- p is the exponent controlling the curve shape (with 0.1 resolution)
-
-- Enable/Disable: Active when `scaling-mode = 1`, pass-through when `scaling-mode = 0`.
-- Remainder Tracking: Optionally track fractional parts in Q16 and carry over to subsequent events for smoother low-speed control.
-
-### Performance
-- The scaling is computed using float with `powf(r, p+1)` per event. This matches the formula closely without fixed-point approximations.
-- Only the final output uses Q16 for remainder accumulation. Outputs are clamped to `[-max-output, max-output]`.
+The expensive `powf` evaluation happens once per frame (at `sync=true`). All axis updates reuse the cached gain and consist of integer Q16 multiplies, so the runtime impact is small and deterministic.
 
 ### Kconfig
 - `CONFIG_SCALER`: Enables building this input processor module.
@@ -30,7 +22,6 @@ Properties:
 - `max-output` (int): Maximum absolute output |y|. Default 127.
 - `half-input` (int): Half-input xs used in r=|x|/xs. Default 50.
 - `exponent-tenths` (int): Exponent p with 0.1 resolution (use p*10, e.g., 15 for p=1.5). Default 10 (p=1.0).
-- `track-remainders` (boolean): If present, enables carrying-over of fractional Q16 remainders.
 
 Example overlay:
 ```dts
@@ -45,7 +36,6 @@ motion_scaler: motion_scaler {
     max-output = <300>;
     half-input = <50>;
     exponent-tenths = <20>; // p = 2.0
-    track-remainders;
 };
 ```
 

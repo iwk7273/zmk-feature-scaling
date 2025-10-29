@@ -31,46 +31,6 @@ struct scaler_config {
     bool track_remainders;
 };
 
-static inline int32_t scale_axis_apply(int32_t dx, const struct scaler_config *config,
-                                       int32_t *remainder_q16) {
-    if (dx == 0) {
-        return 0;
-    }
-
-    // Compute using float strictly per formula
-    const int sign = (dx >= 0) ? 1 : -1;
-    const int aabs = (dx >= 0) ? dx : -dx;
-    const int xs = (config->half_input > 0) ? config->half_input : 1;
-    const float r = (float)aabs / (float)xs;
-    float p = (float)((config->exponent_tenths < 0) ? 0 : config->exponent_tenths) / 10.0f;
-    const float e = p + 1.0f;
-    float rp1 = powf(r, e);
-    if (!isfinite(rp1)) {
-        rp1 = INFINITY; // treat as saturating
-    }
-    const float frac = rp1 / (1.0f + rp1); // in (0,1)
-    float y = (float)config->max_output * frac * (float)sign;
-    // Convert to Q16 for remainder accumulation
-    int32_t scaled_q16 = (int32_t)lrintf(y * (float)Q16_ONE);
-
-    int32_t out;
-    if (config->track_remainders) {
-        scaled_q16 += *remainder_q16;
-        // Use truncate-towards-zero division to extract integer part
-        out = scaled_q16 / Q16_ONE;
-        // Keep fractional remainder with the same sign as scaled_q16
-        *remainder_q16 = scaled_q16 - out * Q16_ONE;
-    } else {
-        out = (scaled_q16 + (1 << 15)) >> 16; // round to nearest
-    }
-
-    // Clamp to [-max_output, max_output]
-    if (out > config->max_output) out = config->max_output;
-    if (out < -config->max_output) out = -config->max_output;
-
-    return out;
-}
-
 /* Compute target output magnitude for a given vector magnitude using the
  * existing y(x) formula (without sign, remainder, or clamping to axis).
  * Returns a non-negative float magnitude.
@@ -225,5 +185,4 @@ static struct zmk_input_processor_driver_api scaler_driver_api = {
                           &scaler_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(SCALER_INST)
-
 
