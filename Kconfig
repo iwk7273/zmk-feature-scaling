@@ -1,4 +1,4 @@
-﻿menuconfig SCALER
+menuconfig SCALER
 	bool "Enable Scaling Module"
 	default n
 	help
